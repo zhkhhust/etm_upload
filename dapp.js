@@ -1400,8 +1400,6 @@ private.attachApi = function () {
         }
       }
       
-      var path = require("path")
-      var fs = require("fs");
       var savedName = body.md5 + ".zip";
       var destDir = path.join(private.dappsPath, "files");
       var destPath = path.join(private.dappsPath, "files", savedName)
@@ -1415,7 +1413,6 @@ private.attachApi = function () {
       }else {
         fs.mkdirSync(destDir)
       }
-      console.dir(req.request) 
       function onFileUploaded(err){
         if (err){
           return res.json({ success: false, error: err});
@@ -1480,12 +1477,7 @@ private.attachApi = function () {
             }
             res.json({ success: true, transaction: transaction[0] });
           });  // endof add
-        })  
-
-
-        
-
-
+        })
       } // end of onFileUploaded
       if (body.link){
         return private.performDownload(destPath, body.link, onFileUploaded);

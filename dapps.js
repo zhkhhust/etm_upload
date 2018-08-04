@@ -36,6 +36,7 @@ var addressHelper = require('../utils/address.js')
 var amountHelper = require('../utils/amount.js');
 var scheme = require('../scheme/dapps');
 var slots = require('../utils/slots.js')
+var file_utils = require("../utils/file_utils.js")
 
 var modules, library, self, __private = {}, shared = {};
 
@@ -1333,7 +1334,176 @@ __private.attachApi = function () {
       });
     });
   });
+  router.post('/register', function (req, res, next) {
+    console.log("register req filese", req.files, "============================= ")
+    req.body.category = parseInt(req.body.category)
+    req.body.type = parseInt(req.body.type)
+    req.body.unlockDelegates = parseInt(req.body.unlockDelegates)
+    req.sanitize(req.body, {
+      type: "object",
+      properties: {
+        secret: {
+          type: "string",
+          minLength: 1
+        },
+        secondSecret: {
+          type: "string",
+          minLength: 1
+        },
+        publicKey: {
+          type: "string",
+          format: "publicKey"
+        },
+        category: {
+          type: "integer",
+          minimum: 0
+        },
+        name: {
+          type: "string",
+          minLength: 1,
+          maxLength: 32
+        },
+        description: {
+          type: "string",
+          minLength: 0,
+          maxLength: 160
+        },
+        tags: {
+          type: "string",
+          minLength: 0,
+          maxLength: 160
+        },
+        type: {
+          type: "integer",
+          minimum: 0
+        },
+       // link: {
+       //   type: "string",
+       //   maxLength: 2000,
+       //   minLength: 1
+       // },
+        icon: {
+          type: "string",
+          minLength: 1,
+          maxLength: 2000
+        }
+      },
+      required: ["secret", "type", "name", "category"]
+    }, function (err, report, body) {
+      if (err) return next(err);
+      if (!report.isValid) return res.json({ success: false, error: report.issues });
+      var hash = crypto.createHash('sha256').update(body.secret, 'utf8').digest();
+      var keypair = ed.MakeKeypair(hash);
 
+      if (body.publicKey) {
+        if (keypair.publicKey.toString('hex') != body.publicKey) {
+          return res.json({ success: false, error: "Invalid passphrase" });
+        }
+      }
+      
+      var savedName = body.md5 + ".zip";
+      var destDir = path.join(private.dappsPath, "files");
+      var destPath = path.join(private.dappsPath, "files", savedName)
+      console.log("==== destPath ==", destPath)
+      if (fs.existsSync(destPath)){
+        return res.json({ success: false, error: "file already uploaded"});
+      }
+      
+      if (fs.existsSync(destDir)){
+        console.log("Dir exists: ", destDir)
+      }else {
+        fs.mkdirSync(destDir)
+      }
+      function onFileUploaded(err){
+        if (err){
+          return res.json({ success: false, error: err});
+        }
+        private.getFileMd5(destPath, function(err, md5){
+          if (err){
+            fs.unlinkSync(destPath);
+            return res.json({ success: false, error: "get file md5 fail"});
+          }
+          if (body.md5 !== md5){
+            fs.unlinkSync(destPath);
+            return res.json({ success: false, error: "file md5 mismatch, "
+           + body.md5 + ", " + md5});
+          }
+
+          library.balancesSequence.add(function (cb) {
+            modules.accounts.getAccount({ publicKey: keypair.publicKey.toString('hex') }, function (err, account) {
+              if (err) {
+                return cb("Database error");
+              }
+  
+              if (!account) {
+                return cb("Account not found");
+              }
+  
+              if (account.secondSignature && !body.secondSecret) {
+                return cb("Invalid second passphrase");
+              }
+  
+              var secondKeypair = null;
+  
+              if (account.secondSignature) {
+                var secondHash = crypto.createHash('sha256').update(body.secondSecret, 'utf8').digest();
+                secondKeypair = ed.MakeKeypair(secondHash);
+              }
+  
+              try {
+                var transaction = library.base.transaction.create({
+                  type: TransactionTypes.DAPP,
+                  sender: account,
+                  keypair: keypair,
+                  secondKeypair: secondKeypair,
+                  category: body.category,
+                  name: body.name,
+                  description: body.description,
+                  tags: body.tags,
+                  dapp_type: body.type,
+                  link: body.link,
+                  icon: body.icon,
+                  delegates: body.delegates,
+                  unlockDelegates: body.unlockDelegates
+                });
+              } catch (e) {
+                return cb(e.toString());
+              }
+  
+              modules.transactions.receiveTransactions([transaction], cb);
+            });
+          }, function (err, transaction) {
+            if (err) {
+              return res.json({ success: false, error: err.toString() });
+            }
+            res.json({ success: true, transaction: transaction[0] });
+          });  // endof add
+        })
+      } // end of onFileUploaded
+      if (body.link){
+        return private.performDownload(destPath, body.link, onFileUploaded);
+      }else {
+        console.log("This part will not run")
+        var files = req.files;
+        if (!files || files.length <= 0){
+          return res.json({ success: false, error: "no file"});
+        }
+        fs.rename(files[0].path, destPath, (err)=>{
+          if (err){
+            console.log("rename fail:", files[0].path, destPath)
+            console.dir(err);
+            return res.json({ success: false, error: "copy file failed"});
+          }
+          fs.stat(destPath, (err, stats) => {
+            if (err) {
+              return res.json({ success: false, error: "copy file failed"});
+            }
+            onFileUploaded(null, res);
+          });
+        })
+      }
+    });
+  });
   router.post('/install', function (req, res, next) {
     req.sanitize(req.body, {
       type: "object",
@@ -2021,6 +2191,10 @@ __private.apiHandler = function (message, callback) {
   } catch (e) {
     return setImmediate(callback, "Invalid call " + e.toString());
   }
+}
+
+__private.checkZipFile = function(zipFile, cb){
+  return setImmediate(cb, true);
 }
 
 __private.dappRoutes = function (dapp, cb) {
