@@ -1,48 +1,74 @@
+var fs = require('fs');
+var request = require("request")
+var crypto = require('crypto');
+var DecompressZip = require('decompress-zip');
+
 module.exports = {
 	
 	getFileMd5: function(file, cb){
-	  var crypto = require('crypto');
-	  var fs = require('fs');
+	  
+		
+		var exists = fs.existsSync(file);
+		if (!exists){
+			return cb("File not exists", null);
+		}
 	  var rs = fs.createReadStream(file);
 	  var hash = crypto.createHash('md5');
 	  rs.on('data', hash.update.bind(hash));
 	  rs.on('end', function () {
 	    cb(null, hash.digest('hex'))
 	  });
-	}
+	},
 
-	decompressZip: function (zipFile, dappPath, serialCb) {
-	  var tmpPath = zipFile
-	  var DecompressZip = require('decompress-zip');
-	  var unzipper = new DecompressZip(tmpPath)
-	  unzipper.on("error", function (err) {
-	    fs.exists(tmpPath, function (exists) {
-	      fs.unlink(tmpPath);
-	    });
-	    rmdir(dappPath, function () { });
-	    serialCb("Failed to decompress zip file: " + err);
-	  });
+	decompressZip: function (filename, destPath, cb) {
 
-	  unzipper.on("extract", function (log) {
-	    library.logger.info(dappPath + " Finished extracting");
-	    fs.exists(tmpPath, function (exists) {
-	      fs.unlink(tmpPath);
-	    });
-	    serialCb(null);
-	  });
+		var exists = fs.existsSync(filename);
+		if (!exists){
+			return cb("File not exists: " + filename);
+		}
+    var unzipper = new DecompressZip(filename)
 
-	  unzipper.on("progress", function (fileIndex, fileCount) {
-	    library.logger.info(dappPath + " Extracted file " + (fileIndex + 1) + " of " + fileCount);
-	  });
+    unzipper.on('error', function (err) {
+        //console.log('Caught an error');
+        cb(err)
+    });
+    
+    unzipper.on('extract', function (log) {
+        console.log('Finished extracting');
+        cb(null)
+    });
+    
+    unzipper.on('progress', function (fileIndex, fileCount) {
+        //console.log('Extracted file ' + (fileIndex + 1) + ' of ' + fileCount);
+    });
+    
+    unzipper.extract({
+        path: 'some/path',
+        filter: function (file) {
+            return file.type !== "SymbolicLink";
+        }
+    });
+  },
 
-	  unzipper.extract({
-	    path: dappPath,
-	    strip: 1
-	  });
-	}
+  listZip: function (filename, cb){
+    var DecompressZip = require('decompress-zip');
+    
+    var unzipper = new DecompressZip(filename)
+    
+    unzipper.on('error', function (err) {
+        cb(err, null)
+    });
+    
+    unzipper.on('list', function (files) {
+        //console.log('The archive contains:');
+        //console.log(files);
+        cb(null, files)
+    });
+    
+    unzipper.list();
+  },
 
-	downloadFile : function (destPath, link, serialCb) {
-	  console.log("========== performDownload ===== ", destPath, link)
+	downloadFile : function (destPath, link, cb) {
 	  var tmpPath = destPath
 	  var file = fs.createWriteStream(tmpPath);
 	  var download = request.get({
@@ -57,10 +83,10 @@ module.exports = {
 	      hasCallbacked = true;
 	      if (err) {
 	        fs.exists(tmpPath, function (exists) {
-	          fs.unlink(tmpPath);
+	          fs.unlinkSync(tmpPath);
 	        });
 	      }
-	      serialCb(err);
+	      cb(err);
 	    }
 	  }
 
