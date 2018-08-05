@@ -1591,6 +1591,68 @@ __private.attachApi = function () {
     });
   });
 
+  router.post('/installAndLaunch', function (req, res, next) {
+    req.sanitize(req.body, {
+      type: "object",
+      properties: {
+        id: {
+          type: 'string',
+          minLength: 1
+        },
+        master: {
+          type: 'string',
+          minLength: 1
+        }
+      },
+      required: ["id"]
+    }, function (err, report, body) {
+      if (err) return next(err);
+      if (!report.isValid) return res.json({ success: false, error: report.issues });
+
+      if (library.config.dapp.masterpassword && body.master !== library.config.dapp.masterpassword) {
+        return res.json({ success: false, error: "Invalid master password" });
+      }
+
+      __private.get(body.id, function (err, dapp) {
+        if (err) {
+          return res.json({ success: false, error: err });
+        }
+
+        __private.getInstalledIds(function (err, ids) {
+          if (err) {
+            return res.json({ success: false, error: err });
+          }
+
+          if (ids.indexOf(body.id) >= 0) {
+            return res.json({ success: false, error: "This dapp already installed" });
+          }
+
+          if (__private.removing[body.id] || __private.loading[body.id]) {
+            return res.json({ success: false, error: "This DApp already on downloading/removing" });
+          }
+
+          __private.loading[body.id] = true;
+
+          __private.installAndLaunchDApp(dapp, function (err, dappPath) {
+            if (err) {
+              __private.loading[body.id] = false;
+              return res.json({ success: false, error: err });
+            } else {
+              if (dapp.type == 0) {
+                // no need to install node dependencies
+              } else {
+              }
+
+              library.network.io.sockets.emit('dapps/change', {});
+              __private.loading[body.id] = false;
+              return res.json({ success: true, path: dappPath });
+            }
+          });
+        });
+      });
+    });
+  });
+
   router.get('/installed', function (req, res, next) {
     __private.getInstalledIds(function (err, files) {
       if (err) {
@@ -2169,6 +2231,43 @@ __private.installDApp = function (dapp, cb) {
     },
     performInstall: function (serialCb) {
       return __private.downloadLink(dapp, dappPath, serialCb);
+    }
+  },
+    function (err) {
+      if (err) {
+        rmdir(dappPath, function () { });
+        return setImmediate(cb, dapp.transactionId + " Installation failed: " + err);
+      } else {
+        return setImmediate(cb, null, dappPath);
+      }
+    });
+}
+
+__private.installAndLaunchDApp = function (dapp, cb) {
+  var dappPath = path.join(__private.dappsPath, dapp.transactionId);
+  var zipFile = path.join(__private.dappsPath, "files", dapp.fileMd5);
+  console.log("zip file: ", zipFile)
+  async.series({
+    checkInstalled: function (serialCb) {
+      fs.exists(dappPath, function (exists) {
+        if (exists) {
+          return serialCb("Dapp is already installed");
+        } else {
+          return serialCb(null);
+        }
+      });
+    },
+    makeDirectory: function (serialCb) {
+      fs.mkdir(dappPath, function (err) {
+        if (err) {
+          return serialCb("Failed to make dapp directory");
+        } else {
+          return serialCb(null);
+        }
+      });
+    },
+    upzipFile: function (serialCb) {
+      return file_utils.decompressZip(zipFile, dappPath, serialCb);
     }
   },
     function (err) {
