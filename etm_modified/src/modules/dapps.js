@@ -37,7 +37,6 @@ var amountHelper = require('../utils/amount.js');
 var scheme = require('../scheme/dapps');
 var slots = require('../utils/slots.js')
 var file_utils = require("../utils/file_utils.js")
-var linkPrefix = "http://118.24.135.98:4196/dapps/files/";
 
 var modules, library, self, __private = {}, shared = {};
 
@@ -49,6 +48,8 @@ __private.unconfirmedLinks = {};
 __private.unconfirmedAscii = {};
 __private.appPath = '';
 __private.dappsPath = '';
+__private.urlPrefix = "";
+__private.uploadPath = "";
 __private.sandboxes = {};
 __private.dappready = {};
 __private.routes = {};
@@ -992,6 +993,8 @@ function DApps(cb, scope) {
 
   __private.appPath = library.config.baseDir;
   __private.dappsPath = library.config.dappsDir
+  __private.urlPrefix = library.config.dapp.urlPrefix;
+  __private.uploadPath = library.config.dapp.uploadPath;
 
   library.base.transaction.attachAssetType(TransactionTypes.DAPP, new DApp());
   library.base.transaction.attachAssetType(TransactionTypes.IN_TRANSFER, new InTransfer());
@@ -1358,7 +1361,7 @@ __private.attachApi = function () {
     });
   });
   router.post('/register', function (req, res, next) {
-    console.log("register req filese", req.files, "============================= ")
+
     req.body.category = parseInt(req.body.category)
     req.body.type = parseInt(req.body.type)
     req.body.unlockDelegates = parseInt(req.body.unlockDelegates)
@@ -1425,17 +1428,16 @@ __private.attachApi = function () {
       }
       
       var savedName = body.md5 + ".zip";
-      var destDir = path.join(__private.dappsPath, "files");
-      var destPath = path.join(__private.dappsPath, "files", savedName)
+      var destPath = path.join(__private.uploadPath, savedName)
       console.log("==== destPath ==", destPath)
       if (fs.existsSync(destPath)){
         return res.json({ success: false, error: "file already uploaded"});
       }
       
-      if (fs.existsSync(destDir)){
-        console.log("Dir exists: ", destDir)
+      if (fs.existsSync(__private.uploadPath)){
+        console.log("Dir exists: ", __private.uploadPath)
       }else {
-        fs.mkdirSync(destDir)
+        fs.mkdirSync(__private.uploadPath)
       }
       function onFileUploaded(err){
         if (err){
@@ -1484,7 +1486,7 @@ __private.attachApi = function () {
                   description: body.description,
                   tags: body.tags,
                   dapp_type: body.type,
-                  link: body.link?body.link:linkPrefix + md5 + ".zip",
+                  link: body.link?body.link:__private.urlPrefix + md5 + ".zip",
                   icon: body.icon,
                   delegates: body.delegates,
                   creatorId: account.address,
@@ -1508,7 +1510,6 @@ __private.attachApi = function () {
       if (body.link){
         return file_utils.downloadFile(destPath, body.link, onFileUploaded);
       }else {
-        console.log("This part will not run")
         var files = req.files;
         if (!files || files.length <= 0){
           return res.json({ success: false, error: "no file"});
@@ -2254,7 +2255,7 @@ __private.installDApp = function (dapp, cb) {
 
 __private.installAndLaunchDApp = function (dapp, cb) {
   var dappPath = path.join(__private.dappsPath, dapp.transactionId);
-  var zipFile = path.join(__private.dappsPath, "files", dapp.fileMd5);
+  var zipFile = path.join(__private.uploadPath, dapp.fileMd5);
   console.log("zip file: ", zipFile)
   async.series({
     checkInstalled: function (serialCb) {
