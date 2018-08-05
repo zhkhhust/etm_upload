@@ -1643,9 +1643,18 @@ __private.attachApi = function () {
               } else {
               }
 
-              library.network.io.sockets.emit('dapps/change', {});
-              __private.loading[body.id] = false;
-              return res.json({ success: true, path: dappPath });
+              __private.launch(req.body, function (err) {
+                if (err) {
+                  return res.json({ "success": false, "error": err });
+                }
+          
+                library.network.io.sockets.emit('dapps/change', {});
+                res.json({ "success": true });
+              });
+
+              //library.network.io.sockets.emit('dapps/change', {});
+              //__private.loading[body.id] = false;
+              //return res.json({ success: true, path: dappPath });
             }
           });
         });
