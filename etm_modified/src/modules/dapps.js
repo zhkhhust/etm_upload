@@ -1644,7 +1644,7 @@ __private.attachApi = function () {
               } else {
               }
 
-              __private.launch(req.body, function (err) {
+              __private.launch2(req.body, function (err) {
                 if (err) {
                   return res.json({ "success": false, "error": err });
                 }
@@ -2255,7 +2255,7 @@ __private.installDApp = function (dapp, cb) {
 
 __private.installAndLaunchDApp = function (dapp, cb) {
   var dappPath = path.join(__private.dappsPath, dapp.transactionId);
-  var zipFile = path.join(__private.uploadPath, dapp.fileMd5);
+  var zipFile = path.join(__private.uploadPath, dapp.fileMd5 + ".zip");
   console.log("zip file: ", zipFile)
   async.series({
     checkInstalled: function (serialCb) {
@@ -2409,9 +2409,15 @@ __private.launch = function (body, cb) {
       installedIds: async.apply(__private.getInstalledIds),
 
       symlink: ['dapp', 'installedIds', function (next, results) {
-        if (results.installedIds.indexOf(body.id) < 0) {
+        console.dir(results.dapp)
+        var dappDir = path.join(__private.dappsPath, body.id);
+        var exists = fs.existsSync(dappDir);
+        if (!exists) {
           return next('Dapp not installed');
         }
+        /*if (results.installedIds.indexOf(body.id) < 0) {
+          return next('Dapp not installed');
+        }*/
         __private.symlink(results.dapp, next);
       }],
 
@@ -2439,6 +2445,63 @@ __private.launch = function (body, cb) {
   });
 }
 
+__private.launch2 = function (body, cb) {
+  library.scheme.validate(body, /*{
+    type: "object",
+    properties: {
+      params: {
+        type: "array",
+        minLength: 1
+      },
+      id: {
+        type: 'string',
+        minLength: 1
+      },
+      master: {
+        type: "string",
+        minLength: 0
+      }
+    },
+    required: ["id"]
+  }*/ scheme.launch, function (err) 
+  {
+    if (err) {
+      return cb(err[0].message);
+    }
+
+    if (__private.launched[body.id]) {
+      return cb("Dapp already launched");
+    }
+
+    body.params = body.params || [''];
+
+    __private.get(body.id, function(err, dapp){
+      if (err){
+        return cb("Dapp not found");
+      }
+      var dappDir = path.join(__private.dappsPath, body.id);
+      var exists = fs.existsSync(dappDir);
+      if (!exists) {
+        return cb('Dapp not installed');
+      }
+      __private.launchApp(dapp, body.params, function(err){
+        if (err){
+          return cb("Launch Dapp failed " + err);
+        }
+        __private.dappRoutes(dapp, function (err) {
+          if (err) {
+            __private.stop(dapp, function(){
+              return cb("Launch Dapp api failed " + err);
+            });
+          }else {
+            __private.launched[body.id] = true;
+            cb();
+          }          
+        }); // end dappRoutes
+      });  // end launchApp
+    });  //  end get
+  })  // end err
+}
 __private.readJson = function (file, cb) {
   fs.readFile(file, 'utf8', function (err, data) {
     if (err) {
@@ -2743,7 +2806,7 @@ DApps.prototype.onBlockchainReady = function () {
     library.logger.info("start to launch " + dappIds.length + " installed dapps");
     async.eachSeries(dappIds, function (id, next) {
       var dappParams = library.config.dapp.params[id] || [];
-      __private.launch({ id: id, params: dappParams }, function (err) {
+      __private.launch2({ id: id, params: dappParams }, function (err) {
         if (err) {
           library.logger.error("Failed to launched dapp[" + id + "]", err);
         } else {
