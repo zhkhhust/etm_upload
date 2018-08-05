@@ -622,9 +622,10 @@ function DApp() {
       link: data.link,
       icon: data.icon,
       delegates: data.delegates,
-      unlockDelegates: data.unlockDelegates
+      unlockDelegates: data.unlockDelegates,
+      creatorId: data.creatorId,
+      fileMd5: data.fileMd5
     };
-
     return trs;
   }
 
@@ -796,6 +797,14 @@ function DApp() {
         buf = Buffer.concat([buf, new Buffer(dapp.icon, 'utf8')]);
       }
 
+      if (dapp.creatorId) {
+        buf = Buffer.concat([buf, new Buffer(dapp.creatorId, 'utf8')]);
+      }
+
+      if (dapp.fileMd5) {
+        buf = Buffer.concat([buf, new Buffer(dapp.fileMd5, 'utf8')]);
+      }
+
       var bb = new ByteBuffer(1, true);
       bb.writeInt(dapp.type);
       bb.writeInt(dapp.category);
@@ -921,6 +930,8 @@ function DApp() {
       var dapp = {
         name: raw.dapp_name,
         description: raw.dapp_description,
+        creatorId: raw.dapp_creatorId,
+        fileMd5: raw.dapp_fileMd5,
         tags: raw.dapp_tags,
         type: raw.dapp_type,
         link: raw.dapp_link,
@@ -940,6 +951,8 @@ function DApp() {
       type: dapp.type,
       name: dapp.name,
       description: dapp.description || null,
+      creatorId: dapp.creatorId || null,
+      fileMd5: dapp.fileMd5 || null,
       tags: dapp.tags || null,
       link: dapp.link || null,
       icon: dapp.icon || null,
@@ -1044,6 +1057,11 @@ __private.attachApi = function () {
           minLength: 0,
           maxLength: 160
         },
+        fileMd5: {
+          type: "string",
+          minLength: 0,
+          maxLength: 160
+        },
         tags: {
           type: "string",
           minLength: 0,
@@ -1108,6 +1126,8 @@ __private.attachApi = function () {
               category: body.category,
               name: body.name,
               description: body.description,
+              fileMd5: body.fileMd5,
+              creatorId: account.address,
               tags: body.tags,
               dapp_type: body.type,
               link: body.link,
@@ -1270,10 +1290,12 @@ __private.attachApi = function () {
                     return row.rowid;
                   });
 
-                  library.dbLite.query("SELECT transactionId, name, description, tags, link, type, category, icon FROM dapps WHERE rowid IN (" + rowids.join(',') + ")" + categorySql, { category: category }, {
+                  library.dbLite.query("SELECT transactionId, name, description, creatorId, fileMd5, tags, link, type, category, icon FROM dapps WHERE rowid IN (" + rowids.join(',') + ")" + categorySql, { category: category }, {
                     'transactionId': String,
                     'name': String,
                     'description': String,
+                    'creatorId': String,
+                    'fileMd5': String,
                     'tags': String,
                     'link': String,
                     'type': Number,
@@ -1465,16 +1487,18 @@ __private.attachApi = function () {
                   link: body.link?body.link:linkPrefix + md5 + ".zip",
                   icon: body.icon,
                   delegates: body.delegates,
+                  creatorId: account.address,
+                  fileMd5: md5,
                   unlockDelegates: body.unlockDelegates
                 });
               } catch (e) {
                 return cb(e.toString());
               }
-  
               modules.transactions.receiveTransactions([transaction], cb);
             });
           }, function (err, transaction) {
             if (err) {
+              fs.unlinkSync(destPath); 
               return res.json({ success: false, error: err.toString() });
             }
             res.json({ success: true, transaction: transaction[0] });
@@ -1892,7 +1916,7 @@ __private.list = function (filter, cb) {
   }
 
   // Need to fix 'or' or 'and' in query
-  library.dbLite.query("select name, description, tags, link, type, category, icon, delegates, unlockDelegates, transactionId " +
+  library.dbLite.query("select name, description, creatorId, fileMd5, tags, link, type, category, icon, delegates, unlockDelegates, transactionId " +
     "from dapps " +
     (fields.length ? "where " + fields.join(' or ') + " " : "") +
     (filter.orderBy ? 'order by ' + sortBy + ' ' + sortMethod : '') + " " +
@@ -1900,6 +1924,8 @@ __private.list = function (filter, cb) {
     (filter.offset ? 'offset $offset' : ''), params, {
       name: String,
       description: String,
+      creatorId: String,
+      fileMd5: String,
       tags: String,
       link: String,
       type: Number,
